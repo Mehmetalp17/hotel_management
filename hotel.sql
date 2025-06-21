@@ -625,3 +625,360 @@ GROUP BY s.service_id, s.service_name, s.category;
 
 
 
+
+
+-- =====================================
+-- DATABASE ROLES AND PRIVILEGES
+-- =====================================
+
+-- Create different user roles for the hotel management system
+
+-- 1. Hotel Manager Role (Full Access)
+CREATE ROLE hotel_manager;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO hotel_manager;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO hotel_manager;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO hotel_manager;
+
+-- 2. Front Desk Agent Role (Guest and Reservation Management)
+CREATE ROLE front_desk_agent;
+GRANT SELECT, INSERT, UPDATE ON guests TO front_desk_agent;
+GRANT SELECT, INSERT, UPDATE ON reservations TO front_desk_agent;
+GRANT SELECT ON rooms TO front_desk_agent;
+GRANT SELECT ON room_types TO front_desk_agent;
+GRANT SELECT ON hotels TO front_desk_agent;
+GRANT SELECT, INSERT ON payments TO front_desk_agent;
+GRANT SELECT ON guest_reservation_summary TO front_desk_agent;
+GRANT SELECT ON room_availability TO front_desk_agent;
+
+-- 3. Housekeeping Role (Room and Maintenance Management)
+CREATE ROLE housekeeping_staff;
+GRANT SELECT ON rooms TO housekeeping_staff;
+GRANT UPDATE (status) ON rooms TO housekeeping_staff;
+GRANT SELECT, INSERT, UPDATE ON maintenance_logs TO housekeeping_staff;
+GRANT SELECT ON reservations TO housekeeping_staff;
+GRANT SELECT ON room_availability TO housekeeping_staff;
+
+-- 4. Finance Role (Payment and Reporting)
+CREATE ROLE finance_staff;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO finance_staff;
+GRANT SELECT, INSERT, UPDATE ON payments TO finance_staff;
+GRANT SELECT ON daily_revenue TO finance_staff;
+GRANT EXECUTE ON FUNCTION calculate_revenue(DATE, DATE) TO finance_staff;
+GRANT EXECUTE ON FUNCTION get_occupancy_rate(INT, DATE) TO finance_staff;
+
+-- 5. Guest Services Role (Service Requests)
+CREATE ROLE guest_services;
+GRANT SELECT ON guests TO guest_services;
+GRANT SELECT ON reservations TO guest_services;
+GRANT SELECT ON services TO guest_services;
+GRANT SELECT, INSERT, UPDATE ON service_requests TO guest_services;
+GRANT SELECT ON staff_workload TO guest_services;
+GRANT SELECT ON service_performance TO guest_services;
+
+-- 6. Read-Only Auditor Role
+CREATE ROLE auditor;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO auditor;
+
+-- =====================================
+-- CONCURRENCY CONTROL DEMONSTRATIONS
+-- =====================================
+
+-- Function to demonstrate READ COMMITTED isolation
+CREATE OR REPLACE FUNCTION demo_read_committed_booking()
+RETURNS TABLE(
+    demo_step TEXT,
+    room_status TEXT,
+    reservation_count BIGINT,
+    message TEXT
+) AS $$
+BEGIN
+    -- Step 1: Show current state
+    RETURN QUERY
+    SELECT 
+        'Step 1: Initial State'::TEXT,
+        r.status,
+        COUNT(res.reservation_id),
+        'Room 101 current status and reservation count'::TEXT
+    FROM rooms r
+    LEFT JOIN reservations res ON r.room_id = res.room_id AND res.status = 'Confirmed'
+    WHERE r.room_number = '101' AND r.hotel_id = 1
+    GROUP BY r.status;
+    
+    -- Set isolation level
+    SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+    
+    -- Simulate concurrent booking scenario
+    RETURN QUERY
+    SELECT 
+        'Step 2: READ COMMITTED Level Set'::TEXT,
+        'N/A'::TEXT,
+        0::BIGINT,
+        'Transaction isolation level set to READ COMMITTED'::TEXT;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to demonstrate SERIALIZABLE isolation
+CREATE OR REPLACE FUNCTION demo_serializable_booking(
+    p_guest_id INT,
+    p_room_id INT,
+    p_check_in DATE,
+    p_check_out DATE
+)
+RETURNS TEXT AS $$
+DECLARE
+    booking_result TEXT;
+    conflict_count INT;
+BEGIN
+    -- Set serializable isolation level
+    SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+    
+    BEGIN
+        -- Check for conflicts
+        SELECT COUNT(*) INTO conflict_count
+        FROM reservations
+        WHERE room_id = p_room_id
+        AND status IN ('Confirmed', 'Checked-in')
+        AND NOT (check_out_date <= p_check_in OR check_in_date >= p_check_out);
+        
+        IF conflict_count > 0 THEN
+            booking_result := 'CONFLICT: Room already booked for selected dates';
+            ROLLBACK;
+        ELSE
+            -- Attempt to create reservation
+            INSERT INTO reservations (guest_id, room_id, check_in_date, check_out_date, adults, total_amount, status)
+            VALUES (p_guest_id, p_room_id, p_check_in, p_check_out, 2, 299.97, 'Confirmed');
+            
+            booking_result := 'SUCCESS: Reservation created successfully with SERIALIZABLE isolation';
+            COMMIT;
+        END IF;
+        
+    EXCEPTION
+        WHEN serialization_failure THEN
+            booking_result := 'SERIALIZATION_FAILURE: Transaction was aborted due to concurrent modification';
+            ROLLBACK;
+        WHEN OTHERS THEN
+            booking_result := 'ERROR: ' || SQLERRM;
+            ROLLBACK;
+    END;
+    
+    RETURN booking_result;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to demonstrate deadlock prevention
+CREATE OR REPLACE FUNCTION demo_deadlock_prevention()
+RETURNS TABLE(
+    step_number INT,
+    description TEXT,
+    lock_acquired TEXT,
+    status TEXT
+) AS $$
+BEGIN
+    -- Step 1: Acquire locks in consistent order (room_id, then guest_id)
+    RETURN QUERY
+    SELECT 
+        1,
+        'Acquiring lock on rooms table first'::TEXT,
+        'room_id ASC order'::TEXT,
+        'PREVENTED DEADLOCK'::TEXT;
+    
+    -- Step 2: Show proper lock ordering
+    RETURN QUERY
+    SELECT 
+        2,
+        'Then acquiring lock on guests table'::TEXT,
+        'guest_id ASC order'::TEXT,
+        'CONSISTENT ORDERING'::TEXT;
+    
+    -- Step 3: Complete transaction
+    RETURN QUERY
+    SELECT 
+        3,
+        'Transaction completed successfully'::TEXT,
+        'All locks released'::TEXT,
+        'SUCCESS'::TEXT;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
+
+
+
+-- Grant sequence usage for roles that need to insert data
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO front_desk_agent;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO housekeeping_staff;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO finance_staff;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO guest_services;
+
+
+-- Create specific users and assign them to roles
+
+-- Hotel Manager Users
+CREATE USER john_manager WITH PASSWORD 'manager123';
+GRANT hotel_manager TO john_manager;
+
+CREATE USER lisa_manager WITH PASSWORD 'manager456';
+GRANT hotel_manager TO lisa_manager;
+
+-- Front Desk Agents
+CREATE USER sarah_frontdesk WITH PASSWORD 'frontdesk123';
+GRANT front_desk_agent TO sarah_frontdesk;
+
+CREATE USER david_frontdesk WITH PASSWORD 'frontdesk456';
+GRANT front_desk_agent TO david_frontdesk;
+
+-- Housekeeping Staff
+CREATE USER mike_housekeeping WITH PASSWORD 'housekeeping123';
+GRANT housekeeping_staff TO mike_housekeeping;
+
+CREATE USER emma_housekeeping WITH PASSWORD 'housekeeping456';
+GRANT housekeeping_staff TO emma_housekeeping;
+
+-- Finance Staff
+CREATE USER anna_finance WITH PASSWORD 'finance123';
+GRANT finance_staff TO anna_finance;
+
+-- Guest Services
+CREATE USER tom_services WITH PASSWORD 'services123';
+GRANT guest_services TO tom_services;
+
+-- Auditor
+CREATE USER audit_user WITH PASSWORD 'audit123';
+GRANT auditor TO audit_user;
+
+
+-- Enable Row Level Security for sensitive tables
+
+-- Enable RLS on payments table
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Finance staff can see all payments, others only see their hotel's payments
+CREATE POLICY payment_access_policy ON payments
+    FOR ALL
+    TO front_desk_agent, guest_services
+    USING (
+        reservation_id IN (
+            SELECT r.reservation_id
+            FROM reservations r
+            JOIN rooms rm ON r.room_id = rm.room_id
+            WHERE rm.hotel_id = current_setting('app.current_hotel_id', true)::int
+        )
+    );
+
+-- Policy: Finance staff can see all payments
+CREATE POLICY finance_payment_policy ON payments
+    FOR ALL
+    TO finance_staff
+    USING (true);
+
+-- Enable RLS on staff table
+ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Staff can only see colleagues from their hotel
+CREATE POLICY staff_hotel_policy ON staff
+    FOR ALL
+    TO front_desk_agent, housekeeping_staff, guest_services
+    USING (hotel_id = current_setting('app.current_hotel_id', true)::int);
+
+-- Policy: Managers and finance can see all staff
+CREATE POLICY manager_staff_policy ON staff
+    FOR ALL
+    TO hotel_manager, finance_staff
+    USING (true);
+
+
+
+-- Function to set current user's hotel context
+CREATE OR REPLACE FUNCTION set_current_hotel(hotel_id_param INT)
+RETURNS VOID AS $$
+BEGIN
+    PERFORM set_config('app.current_hotel_id', hotel_id_param::text, false);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Grant execute permission to all roles
+GRANT EXECUTE ON FUNCTION set_current_hotel(INT) TO front_desk_agent, housekeeping_staff, guest_services, hotel_manager, finance_staff;
+
+-- Function to check user permissions
+CREATE OR REPLACE FUNCTION check_user_permission(table_name TEXT, operation TEXT)
+RETURNS BOOLEAN AS $$
+DECLARE
+    user_role TEXT;
+    has_permission BOOLEAN := FALSE;
+BEGIN
+    SELECT current_user INTO user_role;
+
+    -- Check if user has permission for the operation
+    IF pg_has_role(current_user, 'hotel_manager', 'member') THEN
+        has_permission := TRUE;
+    ELSIF pg_has_role(current_user, 'front_desk_agent', 'member') AND
+          table_name IN ('guests', 'reservations', 'payments') AND
+          operation IN ('SELECT', 'INSERT', 'UPDATE') THEN
+        has_permission := TRUE;
+    ELSIF pg_has_role(current_user, 'housekeeping_staff', 'member') AND
+          table_name IN ('rooms', 'maintenance_logs') THEN
+        has_permission := TRUE;
+    ELSIF pg_has_role(current_user, 'finance_staff', 'member') AND
+          operation = 'SELECT' THEN
+        has_permission := TRUE;
+    END IF;
+
+    RETURN has_permission;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+-- Create audit table to track all database changes
+CREATE TABLE audit_log (
+    audit_id SERIAL PRIMARY KEY,
+    table_name VARCHAR(50) NOT NULL,
+    operation VARCHAR(10) NOT NULL,
+    user_name VARCHAR(50) NOT NULL,
+    old_values JSONB,
+    new_values JSONB,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Grant access to audit table
+GRANT SELECT ON audit_log TO auditor;
+GRANT INSERT ON audit_log TO hotel_manager, front_desk_agent, housekeeping_staff, finance_staff, guest_services;
+GRANT USAGE ON SEQUENCE audit_log_audit_id_seq TO hotel_manager, front_desk_agent, housekeeping_staff, finance_staff, guest_services;
+
+-- Create audit trigger function
+CREATE OR REPLACE FUNCTION audit_trigger_func()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        INSERT INTO audit_log (table_name, operation, user_name, old_values)
+        VALUES (TG_TABLE_NAME, TG_OP, current_user, row_to_json(OLD));
+        RETURN OLD;
+    ELSIF TG_OP = 'UPDATE' THEN
+        INSERT INTO audit_log (table_name, operation, user_name, old_values, new_values)
+        VALUES (TG_TABLE_NAME, TG_OP, current_user, row_to_json(OLD), row_to_json(NEW));
+        RETURN NEW;
+    ELSIF TG_OP = 'INSERT' THEN
+        INSERT INTO audit_log (table_name, operation, user_name, new_values)
+        VALUES (TG_TABLE_NAME, TG_OP, current_user, row_to_json(NEW));
+        RETURN NEW;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create audit triggers on important tables
+CREATE TRIGGER audit_guests_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON guests
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+
+CREATE TRIGGER audit_reservations_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON reservations
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+
+CREATE TRIGGER audit_payments_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON payments
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+
+
+-- Test commands (run these to verify security works)
+

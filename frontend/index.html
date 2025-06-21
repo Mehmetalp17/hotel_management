@@ -16,6 +16,7 @@
                 <button onclick="showModule('reservations')" class="nav-btn">📅 Reservations</button>
                 <button onclick="showModule('payments')" class="nav-btn">💳 Payments</button>
                 <button onclick="showModule('reports')" class="nav-btn">📊 Reports</button>
+                <button onclick="showModule('security')" class="nav-btn">🔐 Security</button> <!-- NEW -->
             </nav>
         </header>
 
@@ -132,32 +133,79 @@
             </div>
             
             <div id="add-reservation-form" style="display: none;">
-                <h3>Create New Reservation</h3>
+                <h3>🎯 Create New Reservation</h3>
                 <form id="reservation-form">
-                    <div class="form-row">
-                        <select id="guest_id" required>
-                            <option value="">Select Guest</option>
-                        </select>
-                        <select id="room_id" required>
-                            <option value="">Select Room</option>
-                        </select>
+                    
+                    <!-- Guest Selection -->
+                    <div class="form-section">
+                        <h4>👤 Guest Information</h4>
+                        <div class="form-row">
+                            <select id="guest_id" required>
+                                <option value="">Select Guest...</option>
+                            </select>
+                            <button type="button" onclick="showAddGuestForm()" class="btn btn-secondary">➕ Add New Guest</button>
+                        </div>
                     </div>
-                    <div class="form-row">
-                        <input type="date" id="check_in_date" placeholder="Check-in Date" required>
-                        <input type="date" id="check_out_date" placeholder="Check-out Date" required>
+            
+                    <!-- Hotel & Dates -->
+                    <div class="form-section">
+                        <h4>🏨 Hotel & Dates</h4>
+                        <div class="form-row">
+                            <select id="hotel_id" required onchange="updateRoomList()">
+                                <option value="">Select Hotel...</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="date-input">
+                                <label for="check_in_date">📅 Check-in:</label>
+                                <input type="date" id="check_in_date" required onchange="updateRoomList()">
+                            </div>
+                            <div class="date-input">
+                                <label for="check_out_date">📅 Check-out:</label>
+                                <input type="date" id="check_out_date" required onchange="updateRoomList()">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="guest-count">
+                                <label for="adults">👥 Adults:</label>
+                                <input type="number" id="adults" min="1" value="1" required>
+                            </div>
+                            <div class="guest-count">
+                                <label for="children">👶 Children:</label>
+                                <input type="number" id="children" min="0" value="0">
+                            </div>
+                        </div>
                     </div>
-                    <div class="form-row">
-                        <input type="number" id="adults" placeholder="Adults" min="1" value="1" required>
-                        <input type="number" id="children" placeholder="Children" min="0" value="0">
+            
+                    <!-- Room Selection -->
+                    <div class="form-section">
+                        <h4>🏠 Available Rooms</h4>
+                        <div id="available-rooms-grid">
+                            <p class="room-instruction">Please select hotel and dates to see available rooms</p>
+                        </div>
+                        <input type="hidden" id="selected_room_id" required>
                     </div>
-                    <div class="form-row">
-                        <input type="number" id="total_amount" placeholder="Total Amount" step="0.01" required>
-                        <textarea id="special_requests" placeholder="Special Requests" rows="2"></textarea>
+            
+                    <!-- Special Requests & Total -->
+                    <div class="form-section">
+                        <h4>💭 Additional Information</h4>
+                        <div class="form-row">
+                            <textarea id="special_requests" placeholder="Special requests or notes (optional)..." rows="3"></textarea>
+                        </div>
+                        <div class="total-section">
+                            <div class="total-amount">
+                                <h3>💰 Total Amount: $<span id="total_amount_display">0.00</span></h3>
+                                <input type="hidden" id="total_amount_input" required>
+                            </div>
+                        </div>
                     </div>
+            
+                    <!-- Form Actions -->
                     <div class="form-actions">
-                        <button type="submit" class="btn btn-primary">💾 Create Reservation</button>
+                        <button type="submit" class="btn btn-success">💾 Create Reservation</button>
                         <button type="button" onclick="hideAddReservationForm()" class="btn btn-secondary">❌ Cancel</button>
                     </div>
+                    
                 </form>
             </div>
             
@@ -278,6 +326,123 @@
             </div>
         </div>
     </div>
+
+    <!-- Security & User Management Module -->
+    <div id="security-module" class="module" style="display: none;">
+        <h2>🔐 Security & User Management</h2>
+        
+        <div class="security-grid">
+            <div class="security-card">
+                <h3>👤 Current User Info</h3>
+                <div id="current-user-info">
+                    <p><strong>Role:</strong> <span id="user-role">Hotel Manager</span></p>
+                    <p><strong>Hotel:</strong> <span id="user-hotel">Grand Palace Hotel</span></p>
+                    <p><strong>Permissions:</strong> <span id="user-permissions">Full Access</span></p>
+                </div>
+            </div>
+            
+            <div class="security-card">
+                <h3>🗄️ Database Roles</h3>
+                <div class="roles-list">
+                    <div class="role-item">
+                        <strong>hotel_manager</strong> - Full system access
+                    </div>
+                    <div class="role-item">
+                        <strong>front_desk_agent</strong> - Guest & reservation management
+                    </div>
+                    <div class="role-item">
+                        <strong>housekeeping_staff</strong> - Room & maintenance access
+                    </div>
+                    <div class="role-item">
+                        <strong>finance_staff</strong> - Payment & reporting access
+                    </div>
+                    <div class="role-item">
+                        <strong>guest_services</strong> - Service request management
+                    </div>
+                    <div class="role-item">
+                        <strong>auditor</strong> - Read-only access for auditing
+                    </div>
+                </div>
+            </div>
+            
+            <div class="security-card">
+                <h3>🔍 Audit Trail</h3>
+                <button onclick="loadAuditLog()" class="btn btn-primary">📋 View Audit Log</button>
+                <div id="audit-log-result">
+                    <p><em>Click the button above to load recent database activities</em></p>
+                </div>
+            </div>
+            
+            <div class="security-card">
+                <h3>🛡️ Permission Testing</h3>
+                <div class="permission-test">
+                    <label for="test-role">Simulate Role:</label>
+                    <select id="test-role">
+                        <option value="hotel_manager">Hotel Manager</option>
+                        <option value="front_desk_agent">Front Desk Agent</option>
+                        <option value="housekeeping_staff">Housekeeping Staff</option>
+                        <option value="finance_staff">Finance Staff</option>
+                        <option value="guest_services">Guest Services</option>
+                        <option value="auditor">Auditor</option>
+                    </select>
+                    
+                    <label for="test-operation">Test Operation:</label>
+                    <select id="test-operation">
+                        <option value="view_guests">View Guests</option>
+                        <option value="edit_guests">Edit Guests</option>
+                        <option value="view_payments">View Payments</option>
+                        <option value="edit_payments">Edit Payments</option>
+                        <option value="view_reports">View Reports</option>
+                        <option value="manage_rooms">Manage Rooms</option>
+                    </select>
+                    
+                    <button onclick="testPermission()" class="btn btn-warning">🧪 Test Permission</button>
+                    <div id="permission-result"></div>
+                </div>
+            </div>
+            
+            <div class="security-card">
+                <h3>👥 User Accounts</h3>
+                <div class="user-accounts">
+                    <div class="user-account">
+                        <strong>john_manager</strong> (Hotel Manager) - ✅ Active
+                    </div>
+                    <div class="user-account">
+                        <strong>sarah_frontdesk</strong> (Front Desk) - ✅ Active
+                    </div>
+                    <div class="user-account">
+                        <strong>mike_housekeeping</strong> (Housekeeping) - ✅ Active
+                    </div>
+                    <div class="user-account">
+                        <strong>anna_finance</strong> (Finance) - ✅ Active
+                    </div>
+                    <div class="user-account">
+                        <strong>audit_user</strong> (Auditor) - ✅ Active
+                    </div>
+                </div>
+            </div>
+            
+            <div class="security-card">
+                <h3>📊 Security Statistics</h3>
+                <div id="security-stats">
+                    <div class="stat-item">
+                        <strong>Total Users:</strong> <span class="stat-number">8</span>
+                    </div>
+                    <div class="stat-item">
+                        <strong>Active Roles:</strong> <span class="stat-number">6</span>
+                    </div>
+                    <div class="stat-item">
+                        <strong>Audit Entries Today:</strong> <span class="stat-number" id="audit-count">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <strong>Failed Login Attempts:</strong> <span class="stat-number">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    
 
     <!-- Loading overlay -->
     <div id="loading-overlay" style="display: none;">

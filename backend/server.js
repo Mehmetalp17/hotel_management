@@ -303,6 +303,63 @@ app.get('/api/rooms', async (req, res) => {
     }
   });
 
+  // Add this after your existing room APIs (around line 267)
+
+// GET all hotels for reservation form
+app.get('/api/hotels', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT hotel_id, hotel_name, city, state FROM hotels ORDER BY hotel_name');
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching hotels:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET rooms by hotel for reservation form
+app.get('/api/rooms/by-hotel/:hotel_id', async (req, res) => {
+  const { hotel_id } = req.params;
+  const { check_in, check_out } = req.query;
+  
+  try {
+    let query = `
+      SELECT 
+        r.room_id, 
+        r.room_number, 
+        rt.type_name, 
+        rt.base_price,
+        rt.max_occupancy,
+        rt.amenities,
+        r.floor_number
+      FROM rooms r
+      JOIN room_types rt ON r.room_type_id = rt.room_type_id
+      WHERE r.hotel_id = $1 AND r.status = 'Available'
+    `;
+    
+    let params = [hotel_id];
+    
+    if (check_in && check_out) {
+      query += `
+        AND r.room_id NOT IN (
+          SELECT res.room_id
+          FROM reservations res
+          WHERE res.status IN ('Confirmed', 'Checked-in')
+          AND NOT (res.check_out_date <= $2 OR res.check_in_date >= $3)
+        )
+      `;
+      params.push(check_in, check_out);
+    }
+    
+    query += ' ORDER BY rt.base_price, r.room_number';
+    
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching rooms by hotel:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
   // =====================================
 // RESERVATION MANAGEMENT APIs
